@@ -1,10 +1,10 @@
-"""Multi-agent AGI research pipeline extracted from notebook.
+"""Multi-agent research pipeline with multi-domain evaluation support.
 
-This script keeps the original notebook purpose:
-1) Plan research queries
+Workflow stages:
+1) Plan research queries (LLM-driven category selection)
 2) Discover papers from arXiv
-3) Evaluate AGI potential
-4) Generate reports
+3) Evaluate domain relevance (AGI, ML, Finance, Economics)
+4) Generate detailed and executive reports
 """
 
 from __future__ import annotations
@@ -110,6 +110,7 @@ class ResearchSystemState(TypedDict):
 
     request_id: str
     research_objective: str
+    domain: str
     current_phase: ResearchPhase
     phase_history: List[Dict[str, Any]]
     discovered_papers: List[Dict[str, Any]]
@@ -137,19 +138,21 @@ def search_arxiv(
     max_papers: int = 10,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    categories: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Search arXiv for AI/ML research papers."""
+    """Search arXiv for research papers, optionally filtered by *categories*."""
     logger.info(
-        "ArXiv search: query='%s', max=%s, from=%s, to=%s",
+        "ArXiv search: query='%s', max=%s, from=%s, to=%s, categories=%s",
         query,
         max_papers,
         from_date,
         to_date,
+        categories,
     )
 
     try:
-        categories = ["cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.NE"]
-        cat_filter = " OR ".join(f"cat:{c}" for c in categories)
+        effective_categories = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV", "cs.NE"]
+        cat_filter = " OR ".join(f"cat:{c}" for c in effective_categories)
         full_query = f"({query}) AND ({cat_filter})"
 
         if from_date or to_date:
@@ -211,10 +214,11 @@ def discover_and_process_papers(
     max_papers: int = 10,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    categories: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Search arXiv, deduplicate papers, and validate minimum content quality."""
     start_time = time.time()
-    papers = search_arxiv(query, max_papers, from_date, to_date)
+    papers = search_arxiv(query, max_papers, from_date, to_date, categories=categories)
 
     seen_titles: set[str] = set()
     unique_papers: List[Dict[str, Any]] = []
@@ -282,14 +286,66 @@ AGI_PARAMETERS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+RUBRIC_REGISTRY: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "agi": AGI_PARAMETERS,
+    "ml": {
+        "model_scalability": {"weight": 0.12, "desc": "Ability to scale to larger datasets and parameters"},
+        "reproducibility": {"weight": 0.10, "desc": "Ease of reproducing reported results"},
+        "benchmark_performance": {"weight": 0.12, "desc": "Performance on standard benchmarks"},
+        "training_efficiency": {"weight": 0.10, "desc": "Compute and data efficiency during training"},
+        "architectural_innovation": {"weight": 0.12, "desc": "Novelty of model architecture or design"},
+        "generalization": {"weight": 0.10, "desc": "Performance on out-of-distribution data"},
+        "data_efficiency": {"weight": 0.08, "desc": "Learning effectively from limited data"},
+        "theoretical_rigor": {"weight": 0.08, "desc": "Strength of mathematical or theoretical foundations"},
+        "real_world_applicability": {"weight": 0.10, "desc": "Practical deployment feasibility"},
+        "ablation_quality": {"weight": 0.08, "desc": "Thoroughness of ablation studies and analysis"},
+    },
+    "finance": {
+        "market_impact": {"weight": 0.12, "desc": "Potential effect on financial markets or pricing"},
+        "risk_modeling": {"weight": 0.12, "desc": "Quality of risk quantification and management"},
+        "data_quality": {"weight": 0.10, "desc": "Rigor of data sourcing and preprocessing"},
+        "backtesting_rigor": {"weight": 0.10, "desc": "Robustness of historical validation methodology"},
+        "regulatory_relevance": {"weight": 0.08, "desc": "Alignment with regulatory frameworks"},
+        "scalability": {"weight": 0.08, "desc": "Ability to scale across markets and instruments"},
+        "novel_methodology": {"weight": 0.12, "desc": "Innovation in financial modeling techniques"},
+        "practical_applicability": {"weight": 0.10, "desc": "Readiness for real-world trading or advisory use"},
+        "statistical_robustness": {"weight": 0.10, "desc": "Soundness of statistical methods and significance"},
+        "portfolio_integration": {"weight": 0.08, "desc": "Ease of integration into portfolio management"},
+    },
+    "economics": {
+        "causal_identification": {"weight": 0.14, "desc": "Strength of causal inference strategy"},
+        "policy_relevance": {"weight": 0.12, "desc": "Applicability to policy design or evaluation"},
+        "empirical_rigor": {"weight": 0.12, "desc": "Quality of empirical methodology and data"},
+        "theoretical_contribution": {"weight": 0.10, "desc": "Advancement of economic theory"},
+        "data_innovation": {"weight": 0.08, "desc": "Use of novel or unconventional data sources"},
+        "external_validity": {"weight": 0.10, "desc": "Generalizability beyond the studied context"},
+        "welfare_implications": {"weight": 0.08, "desc": "Implications for social welfare or equity"},
+        "methodological_novelty": {"weight": 0.10, "desc": "Innovation in econometric or analytical methods"},
+        "replicability": {"weight": 0.08, "desc": "Feasibility of replicating the study"},
+        "interdisciplinary_reach": {"weight": 0.08, "desc": "Relevance across disciplinary boundaries"},
+    },
+}
 
-def calculate_agi_score(parameter_scores: Dict[str, float]) -> Tuple[float, Dict[str, Any]]:
-    """Calculate a weighted AGI score (0-100) from individual parameter scores (1-10)."""
+
+def get_rubric(domain: str) -> Dict[str, Dict[str, Any]]:
+    """Return the evaluation rubric for *domain*, or raise ValueError."""
+    try:
+        return RUBRIC_REGISTRY[domain]
+    except KeyError:
+        valid = ", ".join(sorted(RUBRIC_REGISTRY))
+        raise ValueError(f"Unknown domain '{domain}'. Valid domains: {valid}") from None
+
+
+def calculate_score(
+    parameter_scores: Dict[str, float],
+    parameters: Dict[str, Dict[str, Any]],
+) -> Tuple[float, Dict[str, Any]]:
+    """Calculate a weighted relevance score (0-100) from individual parameter scores (1-10)."""
     total_weighted = 0.0
     total_weight = 0.0
     contributions: Dict[str, Dict[str, Any]] = {}
 
-    for name, cfg in AGI_PARAMETERS.items():
+    for name, cfg in parameters.items():
         if name in parameter_scores:
             score = float(parameter_scores[name])
             weight = float(cfg["weight"])
@@ -306,11 +362,11 @@ def calculate_agi_score(parameter_scores: Dict[str, float]) -> Tuple[float, Dict
     final_score = round(final_score, 1)
 
     if final_score >= 70:
-        classification = "High AGI Potential"
+        classification = "High Potential"
     elif final_score >= 40:
-        classification = "Medium AGI Potential"
+        classification = "Medium Potential"
     else:
-        classification = "Low AGI Potential"
+        classification = "Low Potential"
 
     return final_score, {
         "final_score": final_score,
@@ -320,52 +376,50 @@ def calculate_agi_score(parameter_scores: Dict[str, float]) -> Tuple[float, Dict
     }
 
 
-def get_agi_evaluation_prompt(title: str, abstract: str, authors: List[str]) -> str:
-    """Build the structured AGI evaluation prompt for one paper."""
+def get_evaluation_prompt(
+    title: str,
+    abstract: str,
+    authors: List[str],
+    parameters: Dict[str, Dict[str, Any]],
+    domain: str,
+) -> str:
+    """Build a structured evaluation prompt driven by the rubric for *domain*."""
     authors_str = ", ".join(authors[:5])
-    return f"""EVALUATE THIS RESEARCH PAPER FOR AGI POTENTIAL
+    domain_label = domain.upper()
 
-## PAPER DETAILS
-Title: {title}
-Authors: {authors_str}
-Abstract: {abstract}
+    param_list = "\n".join(
+        f"{i}. {name.replace('_', ' ').title()} \u2014 {cfg['desc']}"
+        for i, (name, cfg) in enumerate(parameters.items(), start=1)
+    )
 
-## EVALUATION TASK
-Rate each AGI parameter on a 1-10 scale.
+    scores_template = ",\n    ".join(
+        f'"{ name}": {{"score": X, "reasoning": "..."}}'
+        for name in parameters
+    )
 
-## AGI PARAMETERS
-1. Novel Problem Solving
-2. Few-Shot Learning
-3. Task Transfer
-4. Abstract Reasoning
-5. Contextual Adaptation
-6. Multi-Rule Integration
-7. Generalization Efficiency
-8. Meta-Learning
-9. World Modeling
-10. Autonomous Goal Setting
-
-## REQUIRED OUTPUT FORMAT
-Return ONLY valid JSON with:
-{{
-  "parameter_scores": {{
-    "novel_problem_solving": {{"score": X, "reasoning": "..."}},
-    "few_shot_learning": {{"score": X, "reasoning": "..."}},
-    "task_transfer": {{"score": X, "reasoning": "..."}},
-    "abstract_reasoning": {{"score": X, "reasoning": "..."}},
-    "contextual_adaptation": {{"score": X, "reasoning": "..."}},
-    "multi_rule_integration": {{"score": X, "reasoning": "..."}},
-    "generalization_efficiency": {{"score": X, "reasoning": "..."}},
-    "meta_learning": {{"score": X, "reasoning": "..."}},
-    "world_modeling": {{"score": X, "reasoning": "..."}},
-    "autonomous_goal_setting": {{"score": X, "reasoning": "..."}}
-  }},
-  "overall_agi_assessment": "2-3 sentence summary",
-  "key_innovations": ["a", "b", "c"],
-  "limitations": ["l1", "l2"],
-  "confidence_level": "High/Medium/Low",
-  "confidence_level_reason": "reason"
-}}"""
+    return (
+        f"EVALUATE THIS RESEARCH PAPER FOR {domain_label} RELEVANCE\n\n"
+        f"## PAPER DETAILS\n"
+        f"Title: {title}\n"
+        f"Authors: {authors_str}\n"
+        f"Abstract: {abstract}\n\n"
+        f"## EVALUATION TASK\n"
+        f"Rate each parameter on a 1-10 scale.\n\n"
+        f"## {domain_label} PARAMETERS\n"
+        f"{param_list}\n\n"
+        f"## REQUIRED OUTPUT FORMAT\n"
+        f"Return ONLY valid JSON with:\n"
+        f"{{\n"
+        f'  "parameter_scores": {{\n'
+        f"    {scores_template}\n"
+        f"  }},\n"
+        f'  "overall_assessment": "2-3 sentence summary",\n'
+        f'  "key_innovations": ["a", "b", "c"],\n'
+        f'  "limitations": ["l1", "l2"],\n'
+        f'  "confidence_level": "High/Medium/Low",\n'
+        f'  "confidence_level_reason": "reason"\n'
+        f"}}"
+    )
 
 
 def planner_node(state: ResearchSystemState) -> ResearchSystemState:
@@ -378,8 +432,14 @@ def planner_node(state: ResearchSystemState) -> ResearchSystemState:
     desired_max_papers = int(state.get("max_papers", 10))
     today = datetime.now().strftime("%Y-%m-%d")
 
-    system_prompt = """You are a Research Planning Specialist for an AGI research system.
+    system_prompt = """You are a Research Planning Specialist.
 Create a JSON execution plan for the given research objective.
+
+Choose the most relevant arXiv categories for this objective.
+Common categories include: cs.AI, cs.LG, cs.CL, cs.CV, cs.NE, cs.MA,
+stat.ML, stat.ME, q-fin.ST, q-fin.PM, q-fin.RM, q-fin.CP, q-fin.GN,
+econ.EM, econ.GN, econ.TH, q-bio.QM, math.OC, physics.soc-ph.
+Pick 2-5 categories that best match the research topic.
 
 You MUST derive date range from the query:
 - past week / 1 week => 7 days back
@@ -393,7 +453,7 @@ Return ONLY JSON:
   "search_keywords": ["k1", "k2"],
   "search_strategy": {
     "primary_sources": ["arxiv"],
-    "categories": ["cs.AI", "cs.LG", "cs.CL"],
+    "categories": ["<chosen-cat-1>", "<chosen-cat-2>"],
     "date_range": "YYYY-MM-DD to YYYY-MM-DD",
     "max_papers_per_source": {desired_max_papers}
   },
@@ -485,13 +545,22 @@ def discovery_node(state: ResearchSystemState) -> ResearchSystemState:
         to_date = parts[1].strip()
 
     max_papers = int(plan.get("search_strategy", {}).get("max_papers_per_source", 10))
+    plan_categories: Optional[List[str]] = (
+        plan.get("search_strategy", {}).get("categories") or None
+    )
+
+    categories_arg = ""
+    if plan_categories:
+        categories_arg = f', categories={json.dumps(plan_categories)}'
+
     input_message = (
         f"EXECUTION PLAN\n"
         f"Keywords: {plan.get('search_keywords', [])}\n"
+        f"Categories: {plan_categories}\n"
         f"Date Range: {from_date} to {to_date}\n"
         f"Max Papers: {max_papers}\n\n"
         f'Call discover_and_process_papers with from_date="{from_date}", '
-        f'to_date="{to_date}", max_papers={max_papers}.'
+        f'to_date="{to_date}", max_papers={max_papers}{categories_arg}.'
     )
 
     discovered_papers: List[Dict[str, Any]] = []
@@ -546,7 +615,9 @@ def _clean_llm_json(text: str) -> str:
     return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
 
 
-def _parse_eval_json(text: str) -> Optional[Dict[str, Any]]:
+def _parse_eval_json(
+    text: str, parameters: Dict[str, Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
     """Parse evaluation JSON with multiple fallback strategies."""
     cleaned = _clean_llm_json(text)
     if not cleaned:
@@ -565,7 +636,7 @@ def _parse_eval_json(text: str) -> Optional[Dict[str, Any]]:
 
     try:
         scores: Dict[str, Dict[str, Any]] = {}
-        for param in AGI_PARAMETERS:
+        for param in parameters:
             pattern = rf"\"{param}\"\s*:\s*\{{\s*\"score\"\s*:\s*(\d+(?:\.\d+)?)"
             match = re.search(pattern, cleaned)
             if match:
@@ -575,9 +646,14 @@ def _parse_eval_json(text: str) -> Optional[Dict[str, Any]]:
                 }
         if scores:
             assessment_match = re.search(
-                r"\"overall_agi_assessment\"\s*:\s*\"([^\"]*)\"",
+                r"\"overall_assessment\"\s*:\s*\"([^\"]*)\"",
                 cleaned,
             )
+            if not assessment_match:
+                assessment_match = re.search(
+                    r"\"overall_agi_assessment\"\s*:\s*\"([^\"]*)\"",
+                    cleaned,
+                )
             innovations_match = re.search(
                 r"\"key_innovations\"\s*:\s*\[(.*?)\]",
                 cleaned,
@@ -585,7 +661,7 @@ def _parse_eval_json(text: str) -> Optional[Dict[str, Any]]:
             )
             return {
                 "parameter_scores": scores,
-                "overall_agi_assessment": (
+                "overall_assessment": (
                     assessment_match.group(1) if assessment_match else ""
                 ),
                 "key_innovations": (
@@ -606,15 +682,22 @@ def _generate_detailed_report(
     results: List[Dict[str, Any]],
     metadata: Dict[str, Any],
     request_id: str,
+    domain: str = "agi",
+    rubric: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
-    """Generate a detailed markdown evaluation report."""
+    """Generate a detailed markdown evaluation report for *domain*."""
+    domain_label = domain.upper()
+
     if not results:
         return (
-            "# Detailed AGI Evaluation Report\n\n"
+            f"# Detailed {domain_label} Evaluation Report\n\n"
             f"Request ID: {request_id}\n"
             f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
             "No papers were successfully evaluated.\n"
         )
+
+    if rubric is None:
+        rubric = get_rubric(domain)
 
     sorted_papers = sorted(results, key=lambda item: item.get("agi_score", 0), reverse=True)
     total = len(results)
@@ -623,24 +706,24 @@ def _generate_detailed_report(
     low = [paper for paper in sorted_papers if paper["agi_score"] < 40]
 
     report = (
-        "# Detailed AGI Evaluation Report\n\n"
+        f"# Detailed {domain_label} Evaluation Report\n\n"
         f"Request ID: {request_id}\n"
         f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
         f"Total Papers Evaluated: {total}\n\n"
         "---\n\n"
         "## Executive Summary\n"
-        f"- Average AGI Score: {metadata.get('avg_agi_score', 0):.1f}/100\n"
-        f"- High AGI Potential (>=70): {len(high)} papers ({len(high)/total*100:.0f}%)\n"
-        f"- Medium AGI Potential (40-69): {len(medium)} papers ({len(medium)/total*100:.0f}%)\n"
-        f"- Low AGI Potential (<40): {len(low)} papers ({len(low)/total*100:.0f}%)\n\n"
+        f"- Average Relevance Score: {metadata.get('avg_agi_score', 0):.1f}/100\n"
+        f"- High Potential (>=70): {len(high)} papers ({len(high)/total*100:.0f}%)\n"
+        f"- Medium Potential (40-69): {len(medium)} papers ({len(medium)/total*100:.0f}%)\n"
+        f"- Low Potential (<40): {len(low)} papers ({len(low)/total*100:.0f}%)\n\n"
         "---\n\n"
         "## Paper Analysis\n\n"
     )
 
     for label, papers_list in [
-        ("HIGH AGI POTENTIAL (>=70)", high),
-        ("MEDIUM AGI POTENTIAL (40-69)", medium),
-        ("LOW AGI POTENTIAL (<40)", low),
+        ("HIGH POTENTIAL (>=70)", high),
+        ("MEDIUM POTENTIAL (40-69)", medium),
+        ("LOW POTENTIAL (<40)", low),
     ]:
         if not papers_list:
             continue
@@ -650,7 +733,7 @@ def _generate_detailed_report(
             report += (
                 f"#### {index}. {paper['paper_title']}\n"
                 f"Authors: {authors_str}\n"
-                f"AGI Score: {paper['agi_score']:.1f}/100 ({paper['agi_classification']})\n"
+                f"Relevance Score: {paper['agi_score']:.1f}/100 ({paper['agi_classification']})\n"
                 f"Assessment: {paper.get('overall_assessment', 'N/A')}\n\n"
             )
             innovations = paper.get("key_innovations", [])
@@ -661,36 +744,34 @@ def _generate_detailed_report(
                 report += "\n"
             report += "---\n\n"
 
+    methodology_lines = "\n".join(
+        f"- {name.replace('_', ' ').title()} {cfg['weight']:.0%}"
+        for name, cfg in rubric.items()
+    )
     report += (
-        "\n## Scoring Methodology\n\n"
-        "10 weighted AGI parameters:\n"
-        "- Novel Problem Solving 15%\n"
-        "- Few-Shot Learning 15%\n"
-        "- Task Transfer 15%\n"
-        "- Abstract Reasoning 12%\n"
-        "- Contextual Adaptation 10%\n"
-        "- Multi-Rule Integration 10%\n"
-        "- Generalization Efficiency 8%\n"
-        "- Meta-Learning 8%\n"
-        "- World Modeling 4%\n"
-        "- Autonomous Goal Setting 3%\n\n"
+        f"\n## Scoring Methodology\n\n"
+        f"{len(rubric)} weighted {domain_label} parameters:\n"
+        f"{methodology_lines}\n\n"
         "*Report generated by Multi-Agent Research System*\n"
     )
     return report
 
 
 def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
-    """LangGraph node: evaluate each paper for AGI potential."""
+    """LangGraph node: evaluate each paper using the domain-specific rubric."""
     logger.info("=== EVALUATION NODE ===")
     papers = state.get("discovered_papers", [])
     if not papers:
         state["evaluation_results"] = []
         return state
 
+    domain = state.get("domain", "agi")
+    rubric = get_rubric(domain)
+
     llm = build_llm(get_config())
     system_msg = SystemMessage(
         content=(
-            "You are an expert AGI evaluator. "
+            f"You are an expert {domain.upper()} research evaluator. "
             "Return only valid JSON in the requested format."
         )
     )
@@ -715,14 +796,14 @@ def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
             continue
 
         try:
+            prompt = get_evaluation_prompt(
+                title, abstract, author_names, rubric, domain
+            )
             response = call_llm(
                 llm,
-                [
-                    system_msg,
-                    HumanMessage(content=get_agi_evaluation_prompt(title, abstract, author_names)),
-                ],
+                [system_msg, HumanMessage(content=prompt)],
             )
-            eval_data = _parse_eval_json(str(response.content))
+            eval_data = _parse_eval_json(str(response.content), rubric)
             if eval_data is None:
                 continue
 
@@ -731,8 +812,12 @@ def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
                 for name, value in eval_data.get("parameter_scores", {}).items()
                 if isinstance(value, dict) and "score" in value
             }
-            weighted_score, breakdown = calculate_agi_score(parameter_scores)
+            weighted_score, breakdown = calculate_score(parameter_scores, rubric)
 
+            overall = (
+                eval_data.get("overall_assessment")
+                or eval_data.get("overall_agi_assessment", "")
+            )
             results.append(
                 {
                     "paper_id": paper.get("id", f"paper_{index}"),
@@ -744,7 +829,7 @@ def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
                     "agi_score": weighted_score,
                     "agi_classification": breakdown["classification"],
                     "parameter_scores": eval_data.get("parameter_scores", {}),
-                    "overall_assessment": eval_data.get("overall_agi_assessment", ""),
+                    "overall_assessment": overall,
                     "key_innovations": eval_data.get("key_innovations", []),
                     "limitations": eval_data.get("limitations", []),
                     "confidence_level": eval_data.get("confidence_level", "Medium"),
@@ -762,6 +847,7 @@ def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
         "successful_evaluations": len(results),
         "failed_evaluations": len(papers) - len(results),
         "avg_agi_score": avg_score,
+        "domain": domain,
         "score_distribution": {
             "high": len([r for r in results if r["agi_score"] >= 70]),
             "medium": len([r for r in results if 40 <= r["agi_score"] < 70]),
@@ -778,7 +864,7 @@ def evaluation_node(state: ResearchSystemState) -> ResearchSystemState:
     detailed_report_name = f"evaluation_detailed_report_{request_id}.md"
     detailed_report_path = get_config().report_output_dir / detailed_report_name
     detailed_report_path.write_text(
-        _generate_detailed_report(results, eval_metadata, request_id),
+        _generate_detailed_report(results, eval_metadata, request_id, domain, rubric),
         encoding="utf-8",
     )
     logger.info("Detailed report written to %s", detailed_report_path)
@@ -790,10 +876,12 @@ def _generate_final_report(state: ResearchSystemState) -> str:
     results = state.get("evaluation_results", [])
     papers = state.get("discovered_papers", [])
     metadata = state.get("synthesis_data", {}).get("evaluation_metadata", {})
+    domain = state.get("domain", "agi")
+    domain_label = domain.upper()
 
     if not results:
         return (
-            "# AGI Research Analysis Report\n\n"
+            f"# {domain_label} Research Analysis Report\n\n"
             f"Objective: {state.get('research_objective', 'N/A')}\n\n"
             "No papers were successfully evaluated.\n"
         )
@@ -803,17 +891,17 @@ def _generate_final_report(state: ResearchSystemState) -> str:
     dist = metadata.get("score_distribution", {})
 
     report = (
-        "# AGI Research Analysis Report\n\n"
+        f"# {domain_label} Research Analysis Report\n\n"
         "## Executive Summary\n\n"
         f"Research Objective: {state.get('research_objective', 'N/A')}\n\n"
         "Discovery Overview:\n"
         f"- Total papers discovered: {len(papers)}\n"
         f"- Papers successfully evaluated: {len(results)}\n"
-        f"- Average AGI score: {avg:.1f}/100\n\n"
-        "AGI Potential Distribution:\n"
-        f"- High AGI Potential: {dist.get('high', 0)} papers\n"
-        f"- Medium AGI Potential: {dist.get('medium', 0)} papers\n"
-        f"- Low AGI Potential: {dist.get('low', 0)} papers\n\n"
+        f"- Average relevance score: {avg:.1f}/100\n\n"
+        "Potential Distribution:\n"
+        f"- High Potential: {dist.get('high', 0)} papers\n"
+        f"- Medium Potential: {dist.get('medium', 0)} papers\n"
+        f"- Low Potential: {dist.get('low', 0)} papers\n\n"
         "## Key Findings - Top Papers\n\n"
     )
 
@@ -824,7 +912,7 @@ def _generate_final_report(state: ResearchSystemState) -> str:
         report += (
             f"### {index}. {paper['paper_title']}\n"
             f"Authors: {authors_str}\n"
-            f"AGI Score: {paper['agi_score']}/100 ({paper['agi_classification']})\n"
+            f"Relevance Score: {paper['agi_score']}/100 ({paper['agi_classification']})\n"
             f"Key Innovations: {innovations}\n"
             f"Assessment: {paper.get('overall_assessment', 'N/A')}\n\n"
         )
@@ -832,15 +920,15 @@ def _generate_final_report(state: ResearchSystemState) -> str:
     high_count = dist.get("high", 0)
     report += "## Insights and Recommendations\n\n"
     if avg >= 70:
-        report += "- Strong AGI advancement observed in top papers.\n"
+        report += f"- Strong {domain_label} relevance observed in top papers.\n"
     elif avg >= 40:
-        report += "- Moderate AGI progress with room for breakthrough innovation.\n"
+        report += f"- Moderate {domain_label} progress with room for breakthrough innovation.\n"
     else:
-        report += "- Most papers remain in narrow-AI territory.\n"
+        report += f"- Most papers show limited {domain_label} relevance.\n"
 
     if high_count > 0:
         report += (
-            f"- Breakthrough potential: {high_count} papers show high AGI potential.\n\n"
+            f"- Breakthrough potential: {high_count} papers show high potential.\n\n"
             "Recommended Actions:\n"
             "1. Deep analysis of high-potential papers.\n"
             "2. Track top research groups.\n"
@@ -851,7 +939,7 @@ def _generate_final_report(state: ResearchSystemState) -> str:
             "\nRecommended Actions:\n"
             "1. Broaden search criteria.\n"
             "2. Extend search timeframe.\n"
-            "3. Refine AGI-focused keywords.\n"
+            f"3. Refine {domain_label}-focused keywords.\n"
         )
 
     report += f"\n---\nReport generated on {datetime.now():%Y-%m-%d %H:%M:%S}\n"
@@ -925,14 +1013,18 @@ def build_research_graph() -> Any:
     return graph.compile()
 
 
-def run_research(query: str, max_papers: int = 10) -> Dict[str, Any]:
+def run_research(
+    query: str, max_papers: int = 10, domain: str = "agi"
+) -> Dict[str, Any]:
     """Run the full research pipeline for a query."""
     _ = get_config()
-    logger.info("Starting research run for query: %s", query)
+    get_rubric(domain)  # validate domain early
+    logger.info("Starting research run for query: %s (domain=%s)", query, domain)
     print("=" * 70)
     print("Multi-Agent Research System")
     print("=" * 70)
     print(f"Research Query: {query}")
+    print(f"Domain: {domain}")
     print(f"Max Papers: {max_papers}")
     print("-" * 70)
 
@@ -941,6 +1033,7 @@ def run_research(query: str, max_papers: int = 10) -> Dict[str, Any]:
         "messages": [HumanMessage(content=query)],
         "request_id": "",
         "research_objective": query,
+        "domain": domain,
         "current_phase": ResearchPhase.INITIALIZATION,
         "phase_history": [],
         "discovered_papers": [],
@@ -973,10 +1066,16 @@ def run_research(query: str, max_papers: int = 10) -> Dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
-        description="Run AGI research multi-agent workflow extracted from notebook."
+        description="Run multi-domain research multi-agent workflow."
     )
     parser.add_argument("--query", required=True, help="Research query/objective")
     parser.add_argument("--max-papers", type=int, default=10, help="Maximum papers")
+    parser.add_argument(
+        "--domain",
+        choices=list(RUBRIC_REGISTRY.keys()),
+        default="agi",
+        help="Evaluation domain (default: agi)",
+    )
     return parser.parse_args()
 
 
@@ -984,7 +1083,9 @@ def main() -> None:
     """CLI entrypoint."""
     args = parse_args()
     try:
-        run_research(query=args.query, max_papers=args.max_papers)
+        run_research(
+            query=args.query, max_papers=args.max_papers, domain=args.domain
+        )
     except ValueError as exc:
         print(f"Configuration error: {exc}")
         raise SystemExit(2) from exc
