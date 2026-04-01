@@ -24,3 +24,4 @@
 - [x] **Make report generators domain-aware with dynamic labels/methodology** — `done`
 - [x] **Create RUBRIC_REGISTRY with 4 predefined rubrics and get_rubric() helper** — `done`
 - [x] **LLM-driven arXiv category selection (planner prompt, search_arxiv, discovery_node)** — `done`
+- [x] **Build Gradio web app (app.py) with three pipeline modes** — `done`
