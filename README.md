@@ -52,7 +52,7 @@ graph TD
 
     DISC["🔍 DISCOVERY<br/><i>arXiv Search Agent</i><br/><br/>• Query arXiv API (5 categories)<br/>• Deduplicate results<br/>• Validate abstract quality"]:::discNode
 
-    EVAL["⚖️ EVALUATION<br/><i>AGI Scoring Agent</i><br/><br/>• Score 10 weighted parameters<br/>• Classify High / Medium / Low<br/>• Generate detailed reasoning"]:::evalNode
+    EVAL["⚖️ EVALUATION<br/><i>Rubric Scoring Agent</i><br/><br/>• Score 10 weighted parameters<br/>  (domain-selected rubric)<br/>• Classify High / Medium / Low<br/>• Generate detailed reasoning"]:::evalNode
 
     REPORT(["📊 Reports Generated"]):::endNode
 
@@ -83,7 +83,7 @@ INITIALIZATION ➜ PLANNING ➜ DISCOVERY ➜ EVALUATION ➜ COMPLETION
 |-------|-------|--------------|
 | **Planning** | Planner | Parses the user query with an LLM to produce a structured JSON execution plan (search keywords, date range, categories, max papers). Falls back to sensible defaults on failure. |
 | **Discovery** | Discovery Agent | Uses a LangChain `create_agent` with a custom `@tool` to call the arXiv API. Deduplicates by normalized title, filters papers with abstracts < 50 chars, and collects metadata. |
-| **Evaluation** | Evaluator | Sends each paper through a structured prompt asking Claude to rate 10 AGI parameters (1–10 scale). Scores are weighted and aggregated into a 0–100 composite score with classification. |
+| **Evaluation** | Evaluator | Sends each paper through a structured prompt asking Claude to rate the **10 weighted criteria** for the **selected domain rubric** (1–10 scale). Scores are aggregated into a 0–100 composite with High / Medium / Low **Potential** classification. |
 | **Completion** | Supervisor | Writes final executive summary and detailed evaluation report to the `reports/` directory. |
 
 ---
@@ -145,7 +145,7 @@ This project exclusively uses **Anthropic Claude** models via [`langchain-anthro
 | **Structured JSON output** | Claude reliably produces valid JSON for execution plans and evaluation scores, reducing parse failures. |
 | **Long-context reasoning** | Handles full paper abstracts and multi-parameter evaluation prompts in a single pass. |
 | **Tool calling** | Native function/tool calling support powers the Discovery Agent's arXiv search integration. |
-| **Low hallucination rate** | Critical for accurate AGI parameter scoring — each score requires grounded reasoning. |
+| **Low hallucination rate** | Important for reliable rubric scoring — each criterion is rated with grounded reasoning. |
 
 ### Model Configuration
 
@@ -161,9 +161,26 @@ The LLM client includes **automatic retry** with exponential backoff (via `tenac
 
 ---
 
-## AGI Evaluation Framework
+## Evaluation rubrics (domain)
 
-Each paper is scored across **10 weighted parameters** that together capture the breadth of AGI-relevant capabilities:
+**Research query** (`--query` / Gradio “Research Query”) is the natural-language **topic** the planner and discovery agents use to find papers on arXiv. It is not an arXiv category code.
+
+**Domain** (`--domain` / Gradio “Domain”) chooses **which expert rubric** drives the evaluation step. It does **not** filter arXiv by subject area by itself; discovery still uses the LLM-produced plan (including categories). Pick the domain that matches how you want papers **judged** (e.g. `finance` or `economics` for investment-style queries, `ml` for core ML contributions, `agi` for broad general-capability themes).
+
+Implemented rubrics (see `RUBRIC_REGISTRY` in `research_multi_agent_system.py`):
+
+| Domain | Focus |
+|--------|--------|
+| **agi** | General-capability themes (transfer, meta-learning, abstract reasoning, etc.) |
+| **ml** | ML paper quality (benchmarks, reproducibility, architecture novelty, ablations, …) |
+| **finance** | Financial modeling (risk, backtesting, markets, regulation, …) |
+| **economics** | Empirical and policy-oriented economics (causal ID, policy relevance, …) |
+
+Each rubric has **10 weighted criteria**. Claude rates each criterion 1–10 with reasoning; the pipeline aggregates a **0–100 relevance score** and labels **High / Medium / Low Potential** (thresholds 70 / 40 in code). Reports and UI may still show internal field names `agi_score` and `agi_classification` for historical reasons; those values reflect the **selected domain’s** rubric, not only the AGI rubric.
+
+### AGI rubric (default domain)
+
+When `domain=agi`, criteria include:
 
 | # | Parameter | Weight | What It Measures |
 |---|-----------|--------|------------------|
@@ -177,12 +194,6 @@ Each paper is scored across **10 weighted parameters** that together capture the
 | 8 | Meta-Learning | 8% | Learning how to learn |
 | 9 | World Modeling | 4% | Building models of complex environments |
 | 10 | Autonomous Goal Setting | 3% | Setting and pursuing own objectives |
-
-**Scoring**: Each parameter is rated 1–10 by Claude with explicit reasoning. The weighted sum is normalized to a **0–100 AGI Score** and classified as:
-
-- **High AGI Potential** (≥ 70)
-- **Medium AGI Potential** (40–69)
-- **Low AGI Potential** (< 40)
 
 ---
 
@@ -265,6 +276,22 @@ cp .env.example .env
 
 ## Usage
 
+### Gradio web UI
+
+Run the local app (same entrypoint as Hugging Face Spaces when `app_file` is `app.py`):
+
+```bash
+python app.py
+```
+
+Three tabs:
+
+- **Full Pipeline** — research → LinkedIn post; requires **Anthropic** and **Tavily** API keys in the form (or env).
+- **Research Only** — research and evaluation only; **Anthropic** required; Tavily not used.
+- **LinkedIn Post (from Report)** — upload a detailed evaluation `.md`; requires **Anthropic** and **Tavily**.
+
+Captured stdout from the pipelines is shown in the **Agent Log**; advanced options (model, max revisions, groundedness) live under **Advanced Settings**.
+
 ### Research Pipeline
 
 ```bash
@@ -328,6 +355,7 @@ python run_pipeline.py \
 
 ```
 Agentic_arXiv_creator/
+├── app.py                           # Gradio UI (Full Pipeline, Research Only, LinkedIn from report)
 ├── research_multi_agent_system.py   # Research pipeline (Planner → Discovery → Evaluation)
 ├── linkedin_post_creator.py         # LinkedIn pipeline (Supervisor → Researcher → Writer → Critic)
 ├── run_pipeline.py                  # End-to-end orchestrator (research → LinkedIn)

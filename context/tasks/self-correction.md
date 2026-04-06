@@ -26,3 +26,9 @@
 - **Mistake:** Called `push_files` on an empty repo (no commits yet), which returned `Conflict: Git Repository is empty`.
 - **Fix:** Used `create_or_update_file` to create the initial commit (README.md), then used `push_files` for remaining files.
 - **Lesson:** Always initialize an empty GitHub repo with at least one file via `create_or_update_file` before using `push_files`.
+
+## 2026-03-31T17:50:00Z
+- **Context:** LinkedIn post creator prints LLM-generated drafts containing emoji characters on Windows.
+- **Mistake:** `print(draft)` raises `UnicodeEncodeError` because Windows console uses `cp1252` encoding which cannot represent emoji. `UnicodeEncodeError` inherits from `ValueError`, so it was caught by the generic `except ValueError` in `main()` instead of the intended `except UnicodeEncodeError` in `run_linkedin_post`.
+- **Fix:** Added `try/except UnicodeEncodeError` around the print call with a fallback that encodes using `sys.stdout.encoding` with `errors="replace"`. For reliable testing, set `PYTHONUTF8=1` env var.
+- **Lesson:** On Windows, always guard `print()` of LLM output against `UnicodeEncodeError`. Remember that `UnicodeEncodeError` is a subclass of `ValueError` — catch it before broader handlers.

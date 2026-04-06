@@ -29,3 +29,5 @@
   - Config bypass: builds `AppConfig` objects from form inputs; clears `@lru_cache` for research module.
   - Stdout capture via `contextlib.redirect_stdout` feeds agent logs to UI textbox.
   - `gradio>=5.0.0` added to `requirements.txt`.
+- README updates (2026-04-05): clarified **query vs domain** (topic vs rubric), documented all `RUBRIC_REGISTRY` domains in a table, retitled evaluation diagram copy to “Rubric Scoring Agent,” added Gradio usage subsection, noted legacy `agi_*` field names in reports/UI.
+- Minor source normalization (2026-04-05): real em dash characters and f-string spacing in `run_pipeline.py`, `linkedin_post_creator.py`, `research_multi_agent_system.py`; self-correction log entry for Windows `UnicodeEncodeError` on printing drafts.

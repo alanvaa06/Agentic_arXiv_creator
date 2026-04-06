@@ -6,7 +6,7 @@ top-ranked paper as seeded context.
 
 Usage::
 
-    python run_pipeline.py --query "deep learning portfolio optimization" \\
+    python run_pipeline.py --query "deep learning portfolio optimization" \
                            --domain finance --max-papers 5
 """
 
@@ -81,7 +81,7 @@ def main() -> None:
     args = parse_args()
 
     print("=" * 70)
-    print("STAGE 1 \u2014 Research Pipeline")
+    print("STAGE 1 — Research Pipeline")
     print("=" * 70)
     try:
         research_result = run_research(
@@ -95,7 +95,7 @@ def main() -> None:
 
     evaluation_results = research_result.get("evaluation_results", [])
     if not evaluation_results:
-        print("No papers were evaluated \u2014 cannot generate LinkedIn post.")
+        print("No papers were evaluated — cannot generate LinkedIn post.")
         sys.exit(1)
 
     paper_ctx, paper_data = _top_paper_context(evaluation_results, top_n=args.top_n)
@@ -103,7 +103,7 @@ def main() -> None:
 
     print()
     print("=" * 70)
-    print("STAGE 2 \u2014 LinkedIn Post Creator")
+    print("STAGE 2 — LinkedIn Post Creator")
     print("=" * 70)
     print(f"Featuring paper: {paper_data['title']}")
     print(f"Score: {paper_data['score']}/100 ({paper_data['classification']})")

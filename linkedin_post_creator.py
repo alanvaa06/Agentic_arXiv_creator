@@ -894,7 +894,7 @@ def run_linkedin_post(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Multi-Agent LinkedIn Post Creator \u2014 generates, critiques, and refines LinkedIn posts.",
+        description="Multi-Agent LinkedIn Post Creator — generates, critiques, and refines LinkedIn posts.",
     )
     parser.add_argument(
         "--topic",
@@ -947,7 +947,7 @@ def main() -> None:
         paper_ctx = format_paper_context(paper_data)
         if topic is None:
             topic = f"LinkedIn post about: {paper_data['title']}"
-        logger.info("Seeded from report \u2014 paper: %s", paper_data["title"])
+        logger.info("Seeded from report — paper: %s", paper_data["title"])
 
     try:
         run_linkedin_post(

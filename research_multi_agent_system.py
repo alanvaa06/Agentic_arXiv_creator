@@ -388,12 +388,12 @@ def get_evaluation_prompt(
     domain_label = domain.upper()
 
     param_list = "\n".join(
-        f"{i}. {name.replace('_', ' ').title()} \u2014 {cfg['desc']}"
+        f"{i}. {name.replace('_', ' ').title()} — {cfg['desc']}"
         for i, (name, cfg) in enumerate(parameters.items(), start=1)
     )
 
     scores_template = ",\n    ".join(
-        f'"{ name}": {{"score": X, "reasoning": "..."}}'
+        f'"{name}": {{"score": X, "reasoning": "..."}}'
         for name in parameters
     )
 
