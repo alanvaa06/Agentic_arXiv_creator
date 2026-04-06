@@ -1,3 +1,14 @@
+---
+title: Agentic ArXiv Creator
+emoji: 📚
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: "5.0.0"
+app_file: app.py
+pinned: false
+---
+
 # Agentic arXiv Creator
 
 > **A multi-agent AI system that discovers, evaluates, and ranks arXiv papers — then generates LinkedIn posts from top findings. Powered by Anthropic Claude and LangGraph.**
@@ -64,7 +75,7 @@ graph TD
 ### Phase Flow
 
 ```
-INITIALIZATION ➤ PLANNING ➤ DISCOVERY ➤ EVALUATION ➤ COMPLETION
+INITIALIZATION ➜ PLANNING ➜ DISCOVERY ➜ EVALUATION ➜ COMPLETION
 ```
 
 | Phase | Agent | What It Does |
@@ -129,7 +140,7 @@ This project exclusively uses **Anthropic Claude** models via [`langchain-anthro
 ### Why Claude?
 
 | Feature | Benefit in This Pipeline |
-|---------|---------------------------|
+|---------|--------------------------|
 | **Structured JSON output** | Claude reliably produces valid JSON for execution plans and evaluation scores, reducing parse failures. |
 | **Long-context reasoning** | Handles full paper abstracts and multi-parameter evaluation prompts in a single pass. |
 | **Tool calling** | Native function/tool calling support powers the Discovery Agent's arXiv search integration. |
