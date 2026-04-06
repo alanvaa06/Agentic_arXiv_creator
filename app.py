@@ -209,23 +209,45 @@ def run_full_pipeline(
         return f"Error: {exc}", "", "", None
 
 
+def _research_report_paths(
+    result: Dict[str, Any],
+) -> Tuple[Optional[Path], Optional[Path]]:
+    """Resolve on-disk paths for the two research reports written by the pipeline.
+
+    Returns (final_report_path, detailed_report_path), each None when the file
+    does not exist (e.g. no papers were found).
+    """
+    report_dir = get_research_config().report_output_dir
+    final_path = report_dir / "final_report.md"
+    request_id = result.get("request_id", "")
+    detailed_path = (
+        report_dir / f"evaluation_detailed_report_{request_id}.md"
+        if request_id
+        else None
+    )
+    return (
+        final_path if final_path.is_file() else None,
+        detailed_path if (detailed_path is not None and detailed_path.is_file()) else None,
+    )
+
+
 def run_research_only(
     anthropic_key: str,
     model: str,
     query: str,
     domain: str,
     max_papers: int,
-) -> Tuple[str, str]:
+) -> Tuple[str, str, str, Optional[str], Optional[str]]:
     """Research only mode.
 
-    Returns (agent_log, papers_table).
+    Returns (agent_log, papers_table, executive_preview, final_report_file, detailed_report_file).
     """
     err = _validate_keys(anthropic_key)
     if err:
-        return err, ""
+        return err, "", "", None, None
 
     if not query.strip():
-        return "Please enter a research query.", ""
+        return "Please enter a research query.", "", "", None, None
 
     try:
         _setup_research_env(anthropic_key, model)
@@ -233,10 +255,18 @@ def run_research_only(
             run_research, query=query, max_papers=int(max_papers), domain=domain
         )
         papers_table = _papers_to_table(result.get("evaluation_results", []))
-        return log, papers_table
+        executive_preview = result.get("final_report") or ""
+        final_path, detailed_path = _research_report_paths(result)
+        return (
+            log,
+            papers_table,
+            executive_preview,
+            str(final_path) if final_path else None,
+            str(detailed_path) if detailed_path else None,
+        )
 
     except Exception as exc:
-        return f"Error: {exc}", ""
+        return f"Error: {exc}", "", "", None, None
 
 
 def run_linkedin_from_report(
@@ -640,6 +670,10 @@ def build_app() -> gr.Blocks:
 
                 ro_log = gr.Textbox(label="Agent Log", lines=15, interactive=False)
                 ro_papers = gr.Markdown(label="Evaluated Papers")
+                ro_preview = gr.Markdown(label="Executive Summary")
+                with gr.Row():
+                    ro_file_final = gr.File(label="Download Executive Report")
+                    ro_file_detailed = gr.File(label="Download Detailed Evaluation Report")
 
                 ro_run_btn.click(
                     fn=run_research_only,
@@ -650,7 +684,7 @@ def build_app() -> gr.Blocks:
                         ro_domain,
                         ro_max_papers,
                     ],
-                    outputs=[ro_log, ro_papers],
+                    outputs=[ro_log, ro_papers, ro_preview, ro_file_final, ro_file_detailed],
                     concurrency_limit=1,
                 )
 

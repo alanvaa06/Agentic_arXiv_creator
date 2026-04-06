@@ -287,7 +287,7 @@ python app.py
 Three tabs:
 
 - **Full Pipeline** — research → LinkedIn post; requires **Anthropic** and **Tavily** API keys in the form (or env).
-- **Research Only** — research and evaluation only; **Anthropic** required; Tavily not used.
+- **Research Only** — research and evaluation only; **Anthropic** required; Tavily not used. After the run, shows an **Executive Summary** preview in-app and exposes two download buttons: `final_report.md` (executive summary) and `evaluation_detailed_report_<id>.md` (per-paper breakdown). Downloads are only enabled when the corresponding file was written (i.e. at least one paper was discovered and evaluated).
 - **LinkedIn Post (from Report)** — upload a detailed evaluation `.md`; requires **Anthropic** and **Tavily**.
 
 Captured stdout from the pipelines is shown in the **Agent Log**; advanced options (model, max revisions, groundedness) live under **Advanced Settings**.
