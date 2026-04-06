@@ -134,10 +134,10 @@ def _papers_to_table(evaluation_results: List[Dict[str, Any]]) -> str:
     rows = ["| # | Title | Score | Classification | Assessment |"]
     rows.append("|---|-------|-------|----------------|------------|")
     for i, p in enumerate(sorted_papers, 1):
-        title = p.get("paper_title", "\u2014")
+        title = p.get("paper_title", "—")
         score = p.get("agi_score", 0)
-        cls_ = p.get("agi_classification", "\u2014")
-        assess = (p.get("overall_assessment") or "\u2014")[:120]
+        cls_ = p.get("agi_classification", "—")
+        assess = (p.get("overall_assessment") or "—")[:120]
         rows.append(f"| {i} | {title} | {score:.1f} | {cls_} | {assess} |")
     return "\n".join(rows)
 
@@ -157,7 +157,7 @@ def run_full_pipeline(
     max_papers: int,
     top_n: int,
 ) -> Tuple[str, str, str, Optional[str]]:
-    """Full pipeline: research \u2192 LinkedIn post.
+    """Full pipeline: research → LinkedIn post.
 
     Returns (agent_log, papers_table, final_post, report_filepath).
     """
@@ -180,7 +180,7 @@ def run_full_pipeline(
 
         if not evaluation_results:
             return (
-                research_log + "\n\nNo papers were evaluated \u2014 cannot generate post.",
+                research_log + "\n\nNo papers were evaluated — cannot generate post.",
                 papers_table,
                 "",
                 None,
@@ -510,7 +510,11 @@ DOMAIN_CHOICES = list(RUBRIC_REGISTRY.keys())
 
 def build_app() -> gr.Blocks:
     """Construct and return the Gradio Blocks application."""
-    with gr.Blocks(title="Agentic ArXiv Creator") as app:
+    with gr.Blocks(
+        title="Agentic ArXiv Creator",
+        theme=_build_theme(),
+        css=CUSTOM_CSS,
+    ) as app:
         gr.Markdown(
             "# Agentic ArXiv Creator\n"
             "Multi-agent research pipeline and LinkedIn post generation, "
@@ -522,13 +526,13 @@ def build_app() -> gr.Blocks:
             anthropic_key = gr.Textbox(
                 label="Anthropic API Key",
                 type="password",
-                placeholder="sk-ant-\u2026",
+                placeholder="sk-ant-…",
                 scale=1,
             )
             tavily_key = gr.Textbox(
                 label="Tavily API Key",
                 type="password",
-                placeholder="tvly-\u2026",
+                placeholder="tvly-…",
                 scale=1,
             )
 
@@ -563,7 +567,7 @@ def build_app() -> gr.Blocks:
                 with gr.Row():
                     fp_query = gr.Textbox(
                         label="Research Query",
-                        placeholder="e.g. recent advances in AGI\u2026",
+                        placeholder="e.g. recent advances in AGI…",
                         scale=3,
                     )
                     fp_domain = gr.Dropdown(
@@ -616,7 +620,7 @@ def build_app() -> gr.Blocks:
                 with gr.Row():
                     ro_query = gr.Textbox(
                         label="Research Query",
-                        placeholder="e.g. transformer architectures for time series\u2026",
+                        placeholder="e.g. transformer architectures for time series…",
                         scale=3,
                     )
                     ro_domain = gr.Dropdown(
@@ -698,4 +702,4 @@ def build_app() -> gr.Blocks:
 
 if __name__ == "__main__":
     demo = build_app()
-    demo.launch(theme=_build_theme(), css=CUSTOM_CSS)
+    demo.launch()
